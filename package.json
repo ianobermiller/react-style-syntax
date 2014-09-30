@@ -13,6 +13,8 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "css": "^2.1.0",
+    "recast": "^0.7.2",
     "to-camel-case": "^0.2.1"
   }
 }
