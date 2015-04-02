@@ -13,6 +13,36 @@ function makePlaceholder(i) {
   return '$ReactStyle' + i + '$';
 }
 
+function extractClass(template, style) {
+  var className = style.selectors[0].substr(1);
+  var declarations = style.declarations;
+  var properties = declarations.map(function(decl) {
+    var key = toCamelCase(decl.property);
+    var value = decl.value.split(SPLIT_BY_PLACEHOLDER);
+    if (value.length === 1) {
+      value = b.literal(value[0]);
+    }
+    else {
+      value = value.reduce(function(left, right, i) {
+        if (typeof left === 'string') {
+          if (left.length === 0) {
+            return template.expressions[i - 1];
+          }
+          left = b.literal(left);
+        }
+        var concat = b.binaryExpression('+', left, template.expressions[i - 1]);
+        if (right.length === 0) {
+          return concat;
+        }
+        return b.binaryExpression('+', concat, b.literal(right));
+      });
+    }
+    return b.property('init', b.identifier(key), value);
+  });
+
+  return {className: className, properties: properties};
+}
+
 function transform(tree) {
   return recast.visit(tree, {
     visitTaggedTemplateExpression: function(path) {
@@ -29,32 +59,22 @@ function transform(tree) {
         }
         var stylesheetRules = parse(css).stylesheet.rules;
         var stylesheetStuff = stylesheetRules.map(function(style) {
-          var className = style.selectors[0].substr(1);
-          var declarations = style.declarations;
-          var properties = declarations.map(function(decl) {
-            var key = toCamelCase(decl.property);
-            var value = decl.value.split(SPLIT_BY_PLACEHOLDER);
-            if (value.length === 1) {
-              value = b.literal(value[0]);
-            }
-            else {
-              value = value.reduce(function(left, right, i) {
-                if (typeof left === 'string') {
-                  if (left.length === 0) {
-                    return template.expressions[i - 1];
-                  }
-                  left = b.literal(left);
-                }
-                var concat = b.binaryExpression('+', left, template.expressions[i - 1]);
-                if (right.length === 0) {
-                  return concat;
-                }
-                return b.binaryExpression('+', concat, b.literal(right));
-              });
-            }
-            return b.property('init', b.identifier(key), value);
-          });
-          return b.property('init', b.identifier(className), b.objectExpression(properties));
+          var type = style.type;
+          var className;
+          var properties;
+          if (type === 'rule') {
+            var opt = extractClass(template, style);
+            return b.property('init', b.identifier(opt.className), b.objectExpression(opt.properties));
+          }
+          else if (type === 'media') {
+            var mediaRules = style.rules.map(function (rule) {
+              var opt = extractClass(template, rule);
+              return b.property('init', b.identifier(opt.className), b.objectExpression(opt.properties));
+            });
+
+            return b.property('init', b.literal('@media ' + style.media), b.objectExpression(mediaRules));
+          }
+
         });
 
         path.replace(
